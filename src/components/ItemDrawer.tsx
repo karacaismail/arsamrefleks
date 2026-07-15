@@ -8,6 +8,7 @@ import {
   ComplianceLevel,
   TimeScope,
 } from '../domain/enums';
+import { fieldHint, exampleContent } from '../features/shared/fieldGuidance';
 
 interface Props {
   item: AdminItem;
@@ -19,6 +20,16 @@ export function ItemDrawer({ item, onClose, onSave }: Props) {
   const [draft, setDraft] = useState<AdminItem>({ ...item });
   const set = <K extends keyof AdminItem>(k: K, v: AdminItem[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
+
+  const ex = exampleContent(item);
+  const fillExample = () =>
+    setDraft((d) => ({
+      ...d,
+      description: d.description || ex.description,
+      answer: d.answer || ex.answer,
+      notes: d.notes || ex.notes,
+      evidence: d.evidence || ex.evidence,
+    }));
 
   const managerConflict = draft.roleScope === RoleScope.MANAGER_ONLY && draft.requiresPatron;
 
@@ -39,6 +50,15 @@ export function ItemDrawer({ item, onClose, onSave }: Props) {
           {LABELS.role[item.roleScope]} · {item.category}
         </p>
 
+        <div className="infobox" style={{ marginTop: 8 }}>
+          <b>Ne yazmalıyım?</b> Bu kaydın kararını, sahibini, son tarihini ve kanıtını girin. Emin
+          değilseniz{' '}
+          <button type="button" className="btn gold sm" onClick={fillExample}>
+            Örnek doldur
+          </button>{' '}
+          — kategoriye uygun taslağı yerleştirir; düzenleyip kaydedersiniz.
+        </div>
+
         {managerConflict && (
           <div className="warnbox" role="alert">
             MANAGER_ONLY bir kayıt patron onayı gerektiremez. Rolü yükseltin ya da “Patron Onayı”nı
@@ -52,9 +72,11 @@ export function ItemDrawer({ item, onClose, onSave }: Props) {
         </div>
         <div className="field">
           <label htmlFor="f-desc">Açıklama</label>
+          <span className="fhint">{fieldHint('description')}</span>
           <textarea
             id="f-desc"
             value={draft.description}
+            placeholder={ex.description}
             onChange={(e) => set('description', e.target.value)}
           />
         </div>
@@ -175,25 +197,31 @@ export function ItemDrawer({ item, onClose, onSave }: Props) {
         </div>
         <div className="field">
           <label htmlFor="f-answer">Cevap / Karar</label>
+          <span className="fhint">{fieldHint('answer')}</span>
           <textarea
             id="f-answer"
             value={draft.answer ?? ''}
+            placeholder={ex.answer}
             onChange={(e) => set('answer', e.target.value || null)}
           />
         </div>
         <div className="field">
           <label htmlFor="f-notes">Not</label>
+          <span className="fhint">{fieldHint('notes')}</span>
           <textarea
             id="f-notes"
             value={draft.notes ?? ''}
+            placeholder={ex.notes}
             onChange={(e) => set('notes', e.target.value || null)}
           />
         </div>
         <div className="field">
           <label htmlFor="f-ev">Kanıt / Belge</label>
+          <span className="fhint">{fieldHint('evidence')}</span>
           <input
             id="f-ev"
             value={draft.evidence ?? ''}
+            placeholder={ex.evidence}
             onChange={(e) => set('evidence', e.target.value || null)}
           />
         </div>

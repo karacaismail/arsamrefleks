@@ -106,6 +106,8 @@ table.data td.actions{white-space:nowrap}
 .field input,.field select,.field textarea{border:1px solid var(--line);border-radius:8px;padding:9px;font-size:.98rem;font-family:inherit;background:var(--card);color:var(--ink)}
 .field textarea{min-height:70px;resize:vertical}
 .field .err{color:var(--bad);font-size:.85rem}
+.field .fhint{font-size:.82rem;color:var(--muted);margin:-1px 0 3px}
+.field textarea::placeholder,.field input::placeholder{color:#9aa8b4;opacity:1}
 .drawer .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .drawer .foot{display:flex;gap:10px;margin-top:16px;position:sticky;bottom:0;background:var(--card);padding-top:10px}
 

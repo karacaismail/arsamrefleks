@@ -7,7 +7,6 @@ import { useItems } from '../../services/store';
 import { applyFilter, type ItemFilter } from '../../services/selectors';
 import { RoleScope, TimeScope, Priority, LABELS } from '../../domain/enums';
 import { roleColor } from '../../components/Badge';
-import type { AdminItem } from '../../domain/types';
 import { GATES } from '../../data/gates';
 
 const START = Date.UTC(2026, 6, 1); // 2026-07-01 = gün 0
@@ -26,18 +25,12 @@ function dayLabel(d: number): string {
 
 const DUR: Record<Priority, number> = { CRITICAL: 21, HIGH: 14, MEDIUM: 10, LOW: 7 };
 
-/** Bir iş kaydının gerçek zaman aralığı (gün). Tarih varsa gerçek; yoksa faz bandı. */
-function itemSpan(it: AdminItem): [number, number] {
-  const dur = DUR[it.priority] ?? 10;
-  if (it.dueDate) {
-    const e = dayOf(it.dueDate);
-    return [Math.max(e - dur, 0), Math.max(e, 1)];
-  }
-  switch (it.timeScope) {
+/** Tarihsiz kayıtların yerleşeceği zaman bandı (gün) — timeScope’a göre. */
+function bandOf(t: TimeScope): [number, number] {
+  switch (t) {
     case TimeScope.PRE_MEETING:
-      return [0, 4];
     case TimeScope.FIRST_MEETING:
-      return [0, 6];
+      return [0, 90];
     case TimeScope.DAY_0_30:
       return [0, 30];
     case TimeScope.DAY_31_60:
@@ -51,7 +44,7 @@ function itemSpan(it: AdminItem): [number, number] {
     case TimeScope.ONGOING:
       return [0, 200];
     default:
-      return [0, dur];
+      return [0, 60];
   }
 }
 
@@ -77,9 +70,31 @@ export function TimelinePage() {
       const end = g.targetDate ? dayOf(g.targetDate) : start + 21;
       return { name: `${g.code} · ${g.title}`, start, end: Math.max(end, start + 5), color: GATE_COLOR, meta: `Kapı · ${LABELS.role[g.ownerRole]}` };
     });
+    // Tarihsiz kayıtları bandları içinde kademeli yay (pragmatik oto-yerleşim):
+    // sıra → farklı pozisyon, öncelik → farklı uzunluk. Gerçek tarih girilince o kullanılır.
+    const undated = filtered.filter((it) => !it.dueDate);
+    const bandCount: Record<string, number> = {};
+    undated.forEach((it) => {
+      const k = bandOf(it.timeScope).join('-');
+      bandCount[k] = (bandCount[k] ?? 0) + 1;
+    });
+    const bandSeen: Record<string, number> = {};
     const itemBars: Bar[] = filtered.map((it) => {
-      const [s, e] = itemSpan(it);
-      return { name: it.title.slice(0, 46), start: s, end: e, color: roleColor(it.roleScope), meta: LABELS.role[it.roleScope] };
+      const dur = DUR[it.priority] ?? 10;
+      const color = roleColor(it.roleScope);
+      const name = it.title.slice(0, 46);
+      const meta = LABELS.role[it.roleScope];
+      if (it.dueDate) {
+        const e = dayOf(it.dueDate);
+        return { name, start: Math.max(e - dur, 0), end: Math.max(e, 1), color, meta };
+      }
+      const [b0, b1] = bandOf(it.timeScope);
+      const key = `${b0}-${b1}`;
+      const n = bandCount[key] ?? 1;
+      const k = (bandSeen[key] = (bandSeen[key] ?? -1) + 1);
+      const usable = Math.max(b1 - b0 - dur, 1);
+      const start = b0 + (n > 1 ? Math.round((k * usable) / (n - 1)) : 0);
+      return { name, start, end: start + dur, color, meta };
     });
     return [...gateBars, ...itemBars];
   }, [filtered]);
