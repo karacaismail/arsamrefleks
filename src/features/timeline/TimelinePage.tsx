@@ -5,19 +5,39 @@ import { FilterBar } from '../../components/FilterBar';
 import { EChart } from '../../components/EChart';
 import { useItems } from '../../services/store';
 import { applyFilter, type ItemFilter } from '../../services/selectors';
-import { RoleScope, TimeScope, LABELS } from '../../domain/enums';
+import { RoleScope, TimeScope, Priority, LABELS } from '../../domain/enums';
 import { roleColor } from '../../components/Badge';
 import type { AdminItem } from '../../domain/types';
+import { GATES } from '../../data/gates';
 
-const START = Date.UTC(2026, 6, 1); // 2026-07-01
+const START = Date.UTC(2026, 6, 1); // 2026-07-01 = gün 0
 const DAY = 86400000;
+const MON = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+const GATE_COLOR = '#0e2740';
 
-function dayRange(it: AdminItem): [number, number] {
+function dayOf(iso: string): number {
+  const s = iso.length === 10 ? `${iso}T00:00:00Z` : iso;
+  return Math.round((Date.parse(s) - START) / DAY);
+}
+function dayLabel(d: number): string {
+  const dt = new Date(START + d * DAY);
+  return `${MON[dt.getUTCMonth()]} ${String(dt.getUTCFullYear()).slice(2)}`;
+}
+
+const DUR: Record<Priority, number> = { CRITICAL: 21, HIGH: 14, MEDIUM: 10, LOW: 7 };
+
+/** Bir iş kaydının gerçek zaman aralığı (gün). Tarih varsa gerçek; yoksa faz bandı. */
+function itemSpan(it: AdminItem): [number, number] {
+  const dur = DUR[it.priority] ?? 10;
+  if (it.dueDate) {
+    const e = dayOf(it.dueDate);
+    return [Math.max(e - dur, 0), Math.max(e, 1)];
+  }
   switch (it.timeScope) {
     case TimeScope.PRE_MEETING:
-      return [0, 3];
-    case TimeScope.FIRST_MEETING:
       return [0, 4];
+    case TimeScope.FIRST_MEETING:
+      return [0, 6];
     case TimeScope.DAY_0_30:
       return [0, 30];
     case TimeScope.DAY_31_60:
@@ -26,77 +46,91 @@ function dayRange(it: AdminItem): [number, number] {
       return [60, 90];
     case TimeScope.MONTHLY:
     case TimeScope.QUARTERLY:
-      return [0, 95];
+      return [0, 120];
     case TimeScope.YEARLY:
     case TimeScope.ONGOING:
-      return [0, 110];
-    case TimeScope.FIXED_DATE: {
-      if (it.dueDate) {
-        const d = Math.round((Date.parse(it.dueDate) - START) / DAY);
-        return [Math.max(d - 2, 0), d + 3];
-      }
-      return [0, 6];
-    }
+      return [0, 200];
     default:
-      return [0, 10];
+      return [0, dur];
   }
+}
+
+interface Bar {
+  name: string;
+  start: number;
+  end: number;
+  color: string;
+  meta: string;
 }
 
 export function TimelinePage() {
   const items = useItems();
   const [filter, setFilter] = useState<ItemFilter>({ role: 'ALL', status: 'ALL' });
 
-  const filtered = useMemo(
-    () => applyFilter(items, filter).slice(0, 60),
-    [items, filter],
-  );
-
+  const filtered = useMemo(() => applyFilter(items, filter).slice(0, 45), [items, filter]);
   const categories = useMemo(() => Array.from(new Set(items.map((i) => i.category))), [items]);
 
-  const option = useMemo<echarts.EChartsOption>(() => {
-    const rows = filtered.map((i) => i.title.slice(0, 42));
-    const data = filtered.map((it, idx) => {
-      const [s, e] = dayRange(it);
-      return { value: [idx, s, e], itemStyle: { color: roleColor(it.roleScope) }, name: it.title };
+  const bars = useMemo<Bar[]>(() => {
+    // Kapı yol haritası: gerçek startDate/targetDate ile yayılan çubuklar (staggered).
+    const gateBars: Bar[] = GATES.map((g, n) => {
+      const start = g.startDate ? dayOf(g.startDate) : n > 0 && GATES[n - 1].targetDate ? dayOf(GATES[n - 1].targetDate!) : 0;
+      const end = g.targetDate ? dayOf(g.targetDate) : start + 21;
+      return { name: `${g.code} · ${g.title}`, start, end: Math.max(end, start + 5), color: GATE_COLOR, meta: `Kapı · ${LABELS.role[g.ownerRole]}` };
     });
+    const itemBars: Bar[] = filtered.map((it) => {
+      const [s, e] = itemSpan(it);
+      return { name: it.title.slice(0, 46), start: s, end: e, color: roleColor(it.roleScope), meta: LABELS.role[it.roleScope] };
+    });
+    return [...gateBars, ...itemBars];
+  }, [filtered]);
+
+  const maxDay = useMemo(() => Math.max(120, ...bars.map((b) => b.end)) + 10, [bars]);
+
+  const option = useMemo<echarts.EChartsOption>(() => {
+    const rows = bars.map((b) => b.name);
+    const data = bars.map((b, idx) => ({
+      value: [idx, b.start, b.end],
+      name: b.name,
+      meta: b.meta,
+      itemStyle: { color: b.color },
+    }));
     return {
-      grid: { left: 260, right: 24, top: 10, bottom: 60 },
+      grid: { left: 270, right: 24, top: 10, bottom: 62 },
       tooltip: {
         formatter: (p: any) =>
-          `<b>${p.name}</b><br/>${LABELS.role[filtered[p.value[0]].roleScope]}<br/>Gün ${p.value[1]}–${p.value[2]}`,
+          `<b>${p.name}</b><br/>${p.data.meta}<br/>${dayLabel(p.value[1])} → ${dayLabel(p.value[2])} (${p.value[2] - p.value[1]} gün)`,
       },
       xAxis: {
         type: 'value',
         min: 0,
-        max: 110,
-        interval: 10,
-        name: 'Gün (0 = 1 Tem 2026)',
-        nameLocation: 'middle',
-        nameGap: 34,
-        axisLabel: { color: '#33475b' },
+        max: maxDay,
+        interval: 30,
+        axisLabel: { color: '#33475b', formatter: (v: number) => dayLabel(v) },
         splitLine: { lineStyle: { color: '#eef2f6' } },
       },
       yAxis: {
         type: 'category',
         data: rows,
         inverse: true,
-        axisLabel: { color: '#33475b', fontSize: 11, width: 240, overflow: 'truncate' },
+        axisLabel: { color: '#33475b', fontSize: 11, width: 250, overflow: 'truncate' },
       },
       dataZoom: [
         { type: 'inside', yAxisIndex: 0, filterMode: 'none' },
-        { type: 'slider', yAxisIndex: 0, width: 14, right: 4, filterMode: 'none' },
-        { type: 'slider', xAxisIndex: 0, height: 22, bottom: 18, handleSize: '160%' },
+        { type: 'slider', yAxisIndex: 0, width: 16, right: 4, filterMode: 'none' },
+        { type: 'slider', xAxisIndex: 0, height: 26, bottom: 16, handleSize: '160%',
+          handleStyle: { color: '#c8992f', borderColor: GATE_COLOR }, moveHandleSize: 14,
+          labelFormatter: (v: number) => dayLabel(Math.round(v)) },
       ],
       series: [
         {
           type: 'custom',
           renderItem: (params: any, api: any) => {
             const cat = api.value(0);
-            const start = api.coord([api.value(1), cat]);
-            const end = api.coord([api.value(2), cat]);
-            const h = Math.max(api.size([0, 1])[1] * 0.55, 10);
+            const s = api.coord([api.value(1), cat]);
+            const e = api.coord([api.value(2), cat]);
+            const h = Math.max(api.size([0, 1])[1] * 0.6, 9);
             const rect = echarts.graphic.clipRectByRect(
-              { x: start[0], y: start[1] - h / 2, width: Math.max(end[0] - start[0], 4), height: h },
+              { x: s[0], y: s[1] - h / 2, width: Math.max(e[0] - s[0], 3), height: h },
               { x: params.coordSys.x, y: params.coordSys.y, width: params.coordSys.width, height: params.coordSys.height },
             );
             return rect && { type: 'rect', shape: { ...rect, r: 3 }, style: api.style() };
@@ -106,7 +140,7 @@ export function TimelinePage() {
         },
       ],
     };
-  }, [filtered]);
+  }, [bars, maxDay]);
 
   const phase = (t: TimeScope) => items.filter((i) => i.timeScope === t);
 
@@ -114,9 +148,14 @@ export function TimelinePage() {
     <div className="section-gap">
       <PageHeader
         title="Zaman Çizelgesi (Gantt)"
-        desc="Y ekseni: iş ve sorumluluklar. X ekseni: zaman. Renkler role göre. Rol, kategori, durum, dönem, öncelik, patron onayı ve gecikme ile filtreleyin."
-        source="Tüm yönetim kayıtları (timeScope → gün aralığı)"
+        desc="Üstte kapı yol haritası (G0–G12, gerçek planlanan tarihlerle yayılan çubuklar); altta iş kayıtları gerçek son tarih + süreye göre. Rol renkleri; rol/kategori/durum/dönem/öncelik/patron onayı/gecikme filtreleri."
+        source="Kapılar (gerçek tarih) + yönetim kayıtları (dueDate / faz)"
       />
+      <div className="infobox">
+        Çubuklar artık <b>gerçek süre</b> gösterir: kapılar planlanan tarihlerle yayılır; iş kayıtları
+        son tarih + öncelik süresine göre uzar. Tarihi olmayan <b>ilk-toplantı checklist</b> kayıtları
+        başlangıçta kümelenir — düzenleyip son tarih verildikçe zamana yayılırlar.
+      </div>
       <FilterBar
         filter={filter}
         onChange={setFilter}
@@ -124,15 +163,17 @@ export function TimelinePage() {
         categories={categories}
       />
       <div className="card">
-        <div className="legend" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+          <span style={{ fontSize: '.9rem', color: 'var(--muted)' }}>
+            <span className="dot" style={{ background: GATE_COLOR }} /> Kapı (G0–G12)
+          </span>
           {Object.values(RoleScope).map((r) => (
             <span key={r} style={{ fontSize: '.9rem', color: 'var(--muted)' }}>
-              <span className="dot" style={{ background: roleColor(r) }} />
-              {LABELS.role[r]}
+              <span className="dot" style={{ background: roleColor(r) }} /> {LABELS.role[r]}
             </span>
           ))}
         </div>
-        <EChart option={option} height={Math.max(filtered.length * 26 + 130, 320)} ariaLabel="Sorumluluk zaman çizelgesi Gantt grafiği" />
+        <EChart option={option} height={Math.max(bars.length * 24 + 140, 360)} ariaLabel="Kapı ve sorumluluk zaman çizelgesi Gantt grafiği" />
       </div>
 
       <div className="kpis">
@@ -141,9 +182,7 @@ export function TimelinePage() {
             <h2>{LABELS.time[t]}</h2>
             <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
               {phase(t).map((i) => (
-                <li key={i.id} style={{ marginBottom: 4 }}>
-                  {i.title}
-                </li>
+                <li key={i.id} style={{ marginBottom: 4 }}>{i.title}</li>
               ))}
               {phase(t).length === 0 && <li style={{ color: 'var(--muted)' }}>—</li>}
             </ul>
