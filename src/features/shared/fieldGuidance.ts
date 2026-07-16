@@ -1,4 +1,4 @@
-import type { AdminItem } from '../../domain/types';
+import type { AdminItem, JointDecision } from '../../domain/types';
 
 // Alan bazlı kısa ipuçları — kullanıcıya "buraya ne yazmalıyım" rehberi.
 const HINTS: Record<string, string> = {
@@ -97,4 +97,73 @@ export function exampleContent(item: AdminItem): Example {
   const cat = `${item.category} ${item.title}`;
   const hit = BY_CATEGORY.find((b) => b.match.test(cat));
   return hit ? hit.ex : GENERIC;
+}
+
+// ---- Ortak Karar (JointDecision) yönergeleri ----
+const DECISION_HINTS: Record<string, string> = {
+  managerRecommendation: 'Yöneticinin önerdiği seçenek ve kısa gerekçe.',
+  investorPosition: 'Patron/yatırımcının bu karara bakışı veya beklentisi.',
+  financialImpact: 'Mali etki: tutar, aralık veya aylık maliyet.',
+  peopleImpact: 'İnsan/ekip etkisi: kadro, rol, moral.',
+  legalImpact: 'Hukuki/uyum etkisi ve gereken uzman kontrolü.',
+  finalDecision: 'Verilen nihai karar. Net ve uygulanabilir tek cümle.',
+  rationale: 'Kararın gerekçesi: hangi kanıt/argümanla verildi.',
+};
+export function decisionHint(field: string): string {
+  return DECISION_HINTS[field] ?? '';
+}
+
+export interface DecisionExample {
+  managerRecommendation: string;
+  investorPosition: string;
+  financialImpact: string;
+  finalDecision: string;
+  rationale: string;
+}
+
+const DECISION_GENERIC: DecisionExample = {
+  managerRecommendation: 'Öneri: [seçenek] — çünkü [kısa gerekçe].',
+  investorPosition: 'Patron görüşü: [onay / çekince / şart].',
+  financialImpact: 'Mali etki: [tutar/aralık veya aylık maliyet].',
+  finalDecision: 'Nihai karar: [ne yapılacak], [ne zaman], [kim sorumlu].',
+  rationale: 'Gerekçe: [kullanılan kanıt/argüman] ışığında bu karar verildi.',
+};
+
+const DECISION_BY_CAT: Array<{ match: RegExp; ex: DecisionExample }> = [
+  {
+    match: /bütçe|limit|kaynak/i,
+    ex: {
+      managerRecommendation: 'Öneri: Model bütçesini onayla; aylık takip paneliyle sapmaları izle.',
+      investorPosition: 'Patron: Yıllık tavan ve aylık yakma sınırı belirlenmeli.',
+      financialImpact: 'Başlangıç sermayesi 40 M₺; aylık yakma tavanı belirlenecek.',
+      finalDecision: 'Nihai karar: Yıllık bütçe X ₺ onaylandı; limit üstü harcama patron onayına tabi.',
+      rationale: 'Nakit disiplini ve şeffaf takip için eşikli model.',
+    },
+  },
+  {
+    match: /marka|kimlik|tedarik/i,
+    ex: {
+      managerRecommendation: 'Öneri: Dış kaynak; en az 3 teklif, IP devir şartıyla.',
+      investorPosition: 'Patron: Bütçe tavanı ve nihai onay bende.',
+      financialImpact: '100.000–150.000 TL planlama aralığı (teklifle doğrulanacak).',
+      finalDecision: 'Nihai karar: [ajans] ile, [tutar] bütçe, [tarih] teslim; IP şirkete devredilir.',
+      rationale: 'Uzmanlık işi; içeride kapasite yok, marka kritik.',
+    },
+  },
+  {
+    match: /devops/i,
+    ex: {
+      managerRecommendation: 'Öneri: Managed servis; ayrı DevOps ekibi kurulmaz.',
+      investorPosition: 'Patron: SLA, erişim sınırı ve maliyet tavanı netleşmeli.',
+      financialImpact: 'Aylık tavan ≈ 2× brüt asgari ücret.',
+      finalDecision: 'Nihai karar: [sağlayıcı] ile SLA’lı dış operasyon; ELK ihtiyaç doğrulanırsa.',
+      rationale: 'Erken aşamada tam zamanlı DevOps maliyeti gereksiz.',
+    },
+  },
+];
+
+export function decisionExample(d: JointDecision): DecisionExample {
+  const cat = `${d.category} ${d.title}`;
+  const hit = DECISION_BY_CAT.find((b) => b.match.test(cat));
+  return hit ? hit.ex : DECISION_GENERIC;
 }

@@ -5,11 +5,14 @@ import { useItems, itemsStore, convertQuestionToDecision } from '../../services/
 import { byKind } from '../../services/selectors';
 import { ItemKind, ComplianceLevel } from '../../domain/enums';
 import type { AdminItem } from '../../domain/types';
+import { exampleContent, fieldHint } from '../shared/fieldGuidance';
 
 function QuestionCard({ q }: { q: AdminItem }) {
   const [answer, setAnswer] = useState(q.answer ?? '');
+  const [evidence, setEvidence] = useState(q.evidence ?? '');
   const [converted, setConverted] = useState(false);
   const prohibited = q.complianceLevel === ComplianceLevel.PROHIBITED;
+  const ex = exampleContent(q);
 
   return (
     <div
@@ -54,23 +57,39 @@ function QuestionCard({ q }: { q: AdminItem }) {
           </div>
           <div className="field">
             <label htmlFor={`ans-${q.id}`}>Patronun cevabı</label>
+            <span className="fhint">{fieldHint('answer')}</span>
             <textarea
               id={`ans-${q.id}`}
               value={answer}
-              placeholder="Patronun cevabını buraya yazın…"
+              placeholder={ex.answer}
               onChange={(e) => setAnswer(e.target.value)}
               onBlur={() => itemsStore.update(q.id, { answer: answer || null })}
             />
           </div>
           <div className="field">
             <label htmlFor={`ev-${q.id}`}>Kanıt / belge</label>
+            <span className="fhint">{fieldHint('evidence')}</span>
             <input
               id={`ev-${q.id}`}
-              defaultValue={q.evidence ?? ''}
-              onBlur={(e) => itemsStore.update(q.id, { evidence: e.target.value || null })}
+              value={evidence}
+              placeholder={ex.evidence}
+              onChange={(e) => setEvidence(e.target.value)}
+              onBlur={() => itemsStore.update(q.id, { evidence: evidence || null })}
             />
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn sm"
+              onClick={() => {
+                const na = answer || ex.answer;
+                const ne = evidence || ex.evidence;
+                setAnswer(na);
+                setEvidence(ne);
+                itemsStore.update(q.id, { answer: na, evidence: ne });
+              }}
+            >
+              Örnek doldur
+            </button>
             <button
               className="btn gold sm"
               onClick={() => {
@@ -100,6 +119,11 @@ export function PatronQuestionsPage() {
         desc="İşaretlenebilir checklist. Her soru: neden, risk, beklenen cevap, patronun cevabı, soruldu/cevaplandı, kanıt, takip ve ortak karara dönüştürme."
         source="strategy içeriği · PATRON_QUESTION (kalıcı: localStorage)"
       />
+      <div className="infobox">
+        <b>Ne yazmalıyım?</b> Her soru için: <b>Soruldu/Cevaplandı</b>’yı işaretle, <b>Patronun cevabı</b>nı
+        yaz, <b>Kanıt</b> ekle; gerekirse <b>Ortak karara dönüştür</b>. Emin değilsen ilgili kartta{' '}
+        <b>Örnek doldur</b>’a bas — kategoriye uygun taslağı koyar, düzenlersin.
+      </div>
       <div className="warnbox">
         <b>Kayıt dışı ücret</b> maddesi bir optimizasyon yöntemi olarak sunulmaz;{' '}
         <b>PROHIBITED</b> (kırmızı uyum ihlali) olarak kodlanmıştır ve işaretlenemez.
